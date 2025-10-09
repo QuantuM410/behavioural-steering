@@ -18,11 +18,19 @@ export function VideoPlayer({ onAngle, simulate = true, onBackendStatus }: Video
   const [backendDevice, setBackendDevice] = React.useState<string>("")
   const [isProcessing, setIsProcessing] = React.useState<boolean>(false)
   const [lastPrediction, setLastPrediction] = React.useState<number>(0)
+  const [isClient, setIsClient] = React.useState<boolean>(false)
   const videoRef = React.useRef<HTMLVideoElement | null>(null)
   const predictionIntervalRef = React.useRef<NodeJS.Timeout | null>(null)
 
-  // Check backend availability on mount
+  // Set client-side flag to prevent hydration mismatch
   React.useEffect(() => {
+    setIsClient(true)
+  }, [])
+
+  // Check backend availability on mount (only on client side)
+  React.useEffect(() => {
+    if (!isClient) return
+
     const checkBackend = async () => {
       try {
         const health = await apiClient.health()
@@ -36,7 +44,7 @@ export function VideoPlayer({ onAngle, simulate = true, onBackendStatus }: Video
       }
     }
     checkBackend()
-  }, [onBackendStatus])
+  }, [isClient, onBackendStatus])
 
   // Prediction logic
   const makePrediction = async (video: HTMLVideoElement) => {
@@ -83,7 +91,7 @@ export function VideoPlayer({ onAngle, simulate = true, onBackendStatus }: Video
   // Real-time prediction when not simulating
   React.useEffect(() => {
     const v = videoRef.current
-    if (!v || simulate || !backendAvailable) return
+    if (!v || simulate || !backendAvailable || !isClient) return
 
     // Clear existing interval
     if (predictionIntervalRef.current) {
@@ -102,7 +110,7 @@ export function VideoPlayer({ onAngle, simulate = true, onBackendStatus }: Video
         clearInterval(predictionIntervalRef.current)
       }
     }
-  }, [simulate, backendAvailable, objectUrl])
+  }, [simulate, backendAvailable, objectUrl, isClient])
 
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
@@ -131,13 +139,15 @@ export function VideoPlayer({ onAngle, simulate = true, onBackendStatus }: Video
   return (
     <div className="flex flex-col gap-3">
       {/* Backend Status */}
-      <div className="flex items-center gap-2">
-        <Badge variant={backendAvailable ? "default" : "destructive"}>
-          {backendAvailable ? `Backend: ${backendDevice}` : "Backend: Offline"}
-        </Badge>
-        {isProcessing && <Badge variant="outline">Processing...</Badge>}
-        {!simulate && backendAvailable && <Badge variant="secondary">Live Inference</Badge>}
-      </div>
+      {isClient && (
+        <div className="flex items-center gap-2">
+          <Badge variant={backendAvailable ? "default" : "destructive"}>
+            {backendAvailable ? `Backend: ${backendDevice}` : "Backend: Offline"}
+          </Badge>
+          {isProcessing && <Badge variant="outline">Processing...</Badge>}
+          {!simulate && backendAvailable && <Badge variant="secondary">Live Inference</Badge>}
+        </div>
+      )}
 
       <div className="flex items-center gap-3">
         <label className="inline-flex items-center gap-2 text-sm">
