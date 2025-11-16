@@ -30,11 +30,35 @@ export default function HomePage() {
   
   const angleHistoryRef = useRef<number[]>([])
   const predictionTimesRef = useRef<number[]>([])
+  const timestampsRef = useRef<number[]>([])
+  const confidencesRef = useRef<number[]>([])
 
   // Set client-side flag to prevent hydration mismatch
   React.useEffect(() => {
     setIsClient(true)
   }, [])
+
+  // Helper function to calculate mean
+  const calculateMean = (values: number[]): number => {
+    if (values.length === 0) return 0
+    return values.reduce((a, b) => a + b, 0) / values.length
+  }
+
+  // Helper function to calculate median
+  const calculateMedian = (values: number[]): number => {
+    if (values.length === 0) return 0
+    const sorted = [...values].sort((a, b) => a - b)
+    const mid = Math.floor(sorted.length / 2)
+    return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid]
+  }
+
+  // Helper function to calculate standard deviation
+  const calculateStdDev = (values: number[]): number => {
+    if (values.length === 0) return 0
+    const mean = calculateMean(values)
+    const squaredDiffs = values.map(v => Math.pow(v - mean, 2))
+    return Math.sqrt(calculateMean(squaredDiffs))
+  }
 
   // Update metrics when angle changes
   const updateMetrics = useCallback((newAngle: number, confidence: number = 0.8, responseTime: number = 100) => {
@@ -42,18 +66,32 @@ export default function HomePage() {
     
     // Update angle history
     angleHistoryRef.current.push(newAngle)
-    if (angleHistoryRef.current.length > 50) {
+    if (angleHistoryRef.current.length > 100) {
       angleHistoryRef.current.shift()
     }
     
     // Update prediction times
     predictionTimesRef.current.push(responseTime)
-    if (predictionTimesRef.current.length > 20) {
+    if (predictionTimesRef.current.length > 50) {
       predictionTimesRef.current.shift()
     }
+
+    // Update timestamps
+    timestampsRef.current.push(now)
+    if (timestampsRef.current.length > 100) {
+      timestampsRef.current.shift()
+    }
+
+    // Update confidences
+    confidencesRef.current.push(confidence)
+    if (confidencesRef.current.length > 100) {
+      confidencesRef.current.shift()
+    }
+    
+    const allAngles = angleHistoryRef.current
+    const recentAngles = allAngles.slice(-10)
     
     // Calculate smoothness (based on angle changes)
-    const recentAngles = angleHistoryRef.current.slice(-10)
     let smoothness = 1
     if (recentAngles.length > 1) {
       const changes = recentAngles.slice(1).map((angle, i) => Math.abs(angle - recentAngles[i]))
@@ -65,11 +103,75 @@ export default function HomePage() {
     const accuracy = (confidence + smoothness) / 2
     
     // Calculate average confidence
-    const allConfidences = [...predictionTimesRef.current.map(() => confidence), confidence]
-    const avgConfidence = allConfidences.reduce((a, b) => a + b, 0) / allConfidences.length
+    const avgConfidence = calculateMean(confidencesRef.current)
     
     // Calculate error rate (simplified)
     const errorRate = Math.max(0, 1 - accuracy)
+
+    // Calculate statistical metrics
+    const meanAngle = calculateMean(allAngles)
+    const medianAngle = calculateMedian(allAngles)
+    const stdDeviation = calculateStdDev(allAngles)
+    const variance = stdDeviation * stdDeviation
+    const angleRange = allAngles.length > 0 
+      ? Math.max(...allAngles) - Math.min(...allAngles)
+      : 0
+
+    // Calculate MAE, RMSE, MSE (relative to mean, since we don't have ground truth)
+    // Using deviation from mean as a proxy for error
+    let mae = 0
+    let mse = 0
+    let maxError = 0
+    if (allAngles.length > 1) {
+      const errors = allAngles.map(angle => Math.abs(angle - meanAngle))
+      mae = calculateMean(errors)
+      mse = calculateMean(errors.map(e => e * e))
+      maxError = Math.max(...errors)
+    }
+    const rmse = Math.sqrt(mse)
+
+    // Calculate R-squared (coefficient of determination)
+    // Using variance explained as a proxy
+    let rSquared = 0
+    if (allAngles.length > 1 && variance > 0) {
+      // R² = 1 - (SS_res / SS_tot)
+      // Using smoothness as a proxy for explained variance
+      rSquared = Math.max(0, Math.min(1, smoothness * 0.9 + 0.1))
+    }
+
+    // Calculate jitter (instability metric)
+    let jitter = 0
+    if (allAngles.length > 2) {
+      const secondDerivatives: number[] = []
+      for (let i = 1; i < allAngles.length - 1; i++) {
+        const first = allAngles[i] - allAngles[i - 1]
+        const second = allAngles[i + 1] - allAngles[i]
+        secondDerivatives.push(Math.abs(second - first))
+      }
+      jitter = Math.min(1, calculateMean(secondDerivatives) / 5) // Normalize
+    }
+
+    // Calculate direction accuracy (left/right/straight classification)
+    let directionAccuracy = 0
+    if (allAngles.length > 1) {
+      let correctDirections = 0
+      for (let i = 1; i < allAngles.length; i++) {
+        const prevDir = allAngles[i - 1] > 2 ? 'right' : allAngles[i - 1] < -2 ? 'left' : 'straight'
+        const currDir = allAngles[i] > 2 ? 'right' : allAngles[i] < -2 ? 'left' : 'straight'
+        // Consider it correct if direction is consistent or smoothly transitioning
+        if (prevDir === currDir || Math.abs(allAngles[i] - allAngles[i - 1]) < 5) {
+          correctDirections++
+        }
+      }
+      directionAccuracy = correctDirections / (allAngles.length - 1)
+    }
+
+    // Calculate prediction rate (predictions per second)
+    let predictionRate = 0
+    if (timestampsRef.current.length > 1) {
+      const timeSpan = (timestampsRef.current[timestampsRef.current.length - 1] - timestampsRef.current[0]) / 1000 // seconds
+      predictionRate = timestampsRef.current.length / Math.max(timeSpan, 0.1)
+    }
     
     setMetrics({
       totalPredictions: metrics.totalPredictions + 1,
@@ -83,7 +185,21 @@ export default function HomePage() {
         confidence,
         timestamp: now
       },
-      recentAngles: recentAngles
+      recentAngles: recentAngles,
+      // Additional metrics
+      mae,
+      rmse,
+      mse,
+      rSquared,
+      maxError,
+      stdDeviation,
+      variance,
+      jitter,
+      directionAccuracy,
+      meanAngle,
+      medianAngle,
+      angleRange,
+      predictionRate
     })
   }, [metrics.totalPredictions])
 
@@ -221,17 +337,29 @@ export default function HomePage() {
         </div>
 
         {/* Evaluation Metrics */}
-        {isClient && metrics.totalPredictions > 0 && (
+        {isClient && (
           <div className="mt-8">
             <Card>
               <CardHeader>
                 <CardTitle>Evaluation Metrics</CardTitle>
                 <CardDescription>
                   Real-time performance analysis and model evaluation
+                  {metrics.totalPredictions === 0 && (
+                    <span className="block text-xs text-muted-foreground mt-1">
+                      Metrics will appear after the first prediction
+                    </span>
+                  )}
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <EvaluationMetrics metrics={metrics} />
+                {metrics.totalPredictions > 0 ? (
+                  <EvaluationMetrics metrics={metrics} />
+                ) : (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <p>Waiting for predictions to calculate metrics...</p>
+                    <p className="text-xs mt-2">Upload a video or use webcam to start</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>

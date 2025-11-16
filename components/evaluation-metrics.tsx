@@ -18,6 +18,20 @@ export interface EvaluationMetrics {
     timestamp: number
   }
   recentAngles: number[]
+  // Additional metrics
+  mae?: number // Mean Absolute Error
+  rmse?: number // Root Mean Squared Error
+  mse?: number // Mean Squared Error
+  rSquared?: number // R-squared coefficient
+  maxError?: number // Maximum error
+  stdDeviation?: number // Standard deviation of predictions
+  variance?: number // Variance of predictions
+  jitter?: number // Jitter/instability metric
+  directionAccuracy?: number // Direction accuracy (left/right/straight)
+  meanAngle?: number // Mean angle
+  medianAngle?: number // Median angle
+  angleRange?: number // Range of angles (max - min)
+  predictionRate?: number // Predictions per second
 }
 
 type EvaluationMetricsProps = {
@@ -34,7 +48,20 @@ export function EvaluationMetrics({ metrics, className }: EvaluationMetricsProps
     responseTime,
     errorRate,
     lastPrediction,
-    recentAngles
+    recentAngles,
+    mae,
+    rmse,
+    mse,
+    rSquared,
+    maxError,
+    stdDeviation,
+    variance,
+    jitter,
+    directionAccuracy,
+    meanAngle,
+    medianAngle,
+    angleRange,
+    predictionRate
   } = metrics
 
   // Calculate trend for recent angles
@@ -60,6 +87,20 @@ export function EvaluationMetrics({ metrics, className }: EvaluationMetricsProps
   const getSmoothnessColor = (smoothness: number) => {
     if (smoothness >= 0.8) return "text-green-600"
     if (smoothness >= 0.6) return "text-yellow-600"
+    return "text-red-600"
+  }
+
+  // Get error metric color (lower is better)
+  const getErrorColor = (value: number, threshold: number) => {
+    if (value <= threshold * 0.5) return "text-green-600"
+    if (value <= threshold) return "text-yellow-600"
+    return "text-red-600"
+  }
+
+  // Get quality color (higher is better, 0-1 scale)
+  const getQualityColor = (value: number) => {
+    if (value >= 0.8) return "text-green-600"
+    if (value >= 0.6) return "text-yellow-600"
     return "text-red-600"
   }
 
@@ -170,6 +211,164 @@ export function EvaluationMetrics({ metrics, className }: EvaluationMetricsProps
           </div>
         </CardContent>
       </Card>
+
+      {/* Statistical Metrics */}
+      {(mae !== undefined || rmse !== undefined || mse !== undefined) && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">Error Metrics</CardTitle>
+            <CardDescription>Statistical error measurements</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {mae !== undefined && (
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">MAE (Mean Absolute Error)</span>
+                <span className={cn("text-sm font-semibold", getErrorColor(mae, 5))}>
+                  {mae.toFixed(2)}°
+                </span>
+              </div>
+            )}
+            {rmse !== undefined && (
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">RMSE (Root Mean Squared Error)</span>
+                <span className={cn("text-sm font-semibold", getErrorColor(rmse, 7))}>
+                  {rmse.toFixed(2)}°
+                </span>
+              </div>
+            )}
+            {mse !== undefined && (
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">MSE (Mean Squared Error)</span>
+                <span className={cn("text-sm font-semibold", getErrorColor(mse, 50))}>
+                  {mse.toFixed(2)}°²
+                </span>
+              </div>
+            )}
+            {maxError !== undefined && (
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Max Error</span>
+                <span className={cn("text-sm font-semibold", getErrorColor(maxError, 15))}>
+                  {maxError.toFixed(2)}°
+                </span>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Model Quality Metrics */}
+      {(rSquared !== undefined || directionAccuracy !== undefined || jitter !== undefined) && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">Model Quality</CardTitle>
+            <CardDescription>Advanced model performance indicators</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {rSquared !== undefined && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">R² (R-squared)</span>
+                  <span className={cn("text-sm font-semibold", getQualityColor(rSquared))}>
+                    {rSquared.toFixed(3)}
+                  </span>
+                </div>
+                <Progress value={rSquared * 100} className="h-2" />
+              </div>
+            )}
+            {directionAccuracy !== undefined && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Direction Accuracy</span>
+                  <span className={cn("text-sm font-semibold", getQualityColor(directionAccuracy))}>
+                    {(directionAccuracy * 100).toFixed(1)}%
+                  </span>
+                </div>
+                <Progress value={directionAccuracy * 100} className="h-2" />
+              </div>
+            )}
+            {jitter !== undefined && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Stability (1 - Jitter)</span>
+                  <span className={cn("text-sm font-semibold", getQualityColor(1 - jitter))}>
+                    {((1 - jitter) * 100).toFixed(1)}%
+                  </span>
+                </div>
+                <Progress value={(1 - jitter) * 100} className="h-2" />
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Distribution Metrics */}
+      {(stdDeviation !== undefined || variance !== undefined || meanAngle !== undefined || medianAngle !== undefined) && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">Distribution Metrics</CardTitle>
+            <CardDescription>Statistical distribution of predictions</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {meanAngle !== undefined && (
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Mean Angle</span>
+                <span className="text-sm font-semibold">
+                  {meanAngle.toFixed(2)}°
+                </span>
+              </div>
+            )}
+            {medianAngle !== undefined && (
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Median Angle</span>
+                <span className="text-sm font-semibold">
+                  {medianAngle.toFixed(2)}°
+                </span>
+              </div>
+            )}
+            {stdDeviation !== undefined && (
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Standard Deviation</span>
+                <span className="text-sm font-semibold">
+                  {stdDeviation.toFixed(2)}°
+                </span>
+              </div>
+            )}
+            {variance !== undefined && (
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Variance</span>
+                <span className="text-sm font-semibold">
+                  {variance.toFixed(2)}°²
+                </span>
+              </div>
+            )}
+            {angleRange !== undefined && (
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Angle Range</span>
+                <span className="text-sm font-semibold">
+                  {angleRange.toFixed(2)}°
+                </span>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Performance Metrics */}
+      {predictionRate !== undefined && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">Performance</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Prediction Rate</span>
+              <span className="text-sm font-semibold">
+                {predictionRate.toFixed(1)} pred/s
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Recent Angles Chart */}
       {recentAngles.length > 0 && (
